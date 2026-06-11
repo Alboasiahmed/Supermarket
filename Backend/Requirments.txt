@@ -1,0 +1,9 @@
+supabase
+pandas
+python-dotenv
+sentence-transformers
+langchain
+langchain-community
+fastapi
+uvicorn
+ 
