@@ -1,4 +1,5 @@
 import os
+import sys
 import pandas as pd
 from supabase import create_client
 from dotenv import load_dotenv
@@ -10,18 +11,28 @@ supabase = create_client(
     os.getenv("SUPABASE_KEY")
 )
 
+# Path to the MYOB export. Change this if the file lives somewhere else,
+# or pass a path on the command line:  python "imported items.py" C:\path\Stock.txt
+STOCK_FILE = r"C:\Users\alboa\Downloads\Stock.txt"
+
+# Maps our database fields -> the EXACT column names in Stock.txt
 COLUMN_MAP = {
-    "sku":           "Stock Code",
     "barcode":       "Barcode",
     "item_name":     "Description",
-    "description":   "Notes",
-    "retail_price":  "Sell Price Inc",
-    "cost_price":    "Cost Price",
-    "unit":          "Unit",
-    "reorder_point": "Reorder Level",
-    "on_hand":       "On Hand",
+    "extended_desc": "Extended_Desc",
+    "retail_price":  "Sell",
+    "cost_price":    "Cost",
+    "unit":          "UnitOf_Measure",
+    "reorder_point": "Min_Qty",
     "category":      "Department",
+    "subcat_1":      "CatHeader_1",
+    "subcat_2":      "CatHeader_2",
+    "inactive":      "Inactive",
 }
+
+# The CatHeader columns sometimes contain MYOB placeholder junk
+# ("Category 3", "Oters", etc.) instead of a real subcategory tag.
+PLACEHOLDER_TAGS = {"", "category 1", "category 2", "category 3", "oters", "others"}
 
 
 def clean_price(value):
@@ -31,8 +42,27 @@ def clean_price(value):
 def clean_int(value):
     try:
         return int(float(str(value).strip() or 0))
-    except:
+    except (ValueError, TypeError):
         return 0
+
+
+def clean_tag(value):
+    """Return a real subcategory tag, or '' if it's blank/placeholder junk."""
+    tag = str(value).strip()
+    return "" if tag.lower() in PLACEHOLDER_TAGS else tag
+
+
+def build_description(row):
+    """Extended_Desc is empty for these items, so fall back to the CatHeader
+    subcategory tags (e.g. 'Rusk Biscuits'). This keeps the field useful and
+    gives the search/embedding step more words to match on."""
+    extended = str(row.get(COLUMN_MAP["extended_desc"], "")).strip()
+    if extended:
+        return extended
+    tags = [clean_tag(row.get(COLUMN_MAP["subcat_1"], "")),
+            clean_tag(row.get(COLUMN_MAP["subcat_2"], ""))]
+    tags = [t for t in tags if t]
+    return " ".join(tags) or None
 
 
 def get_or_create_category(name):
@@ -46,13 +76,18 @@ def get_or_create_category(name):
     return result.data[0]["category_id"]
 
 
-def import_items(csv_path):
+def import_items(path):
+    # Stock.txt is TAB-separated with quoted values.
+    #  - sep="\t"            : split on tabs, not commas (descriptions contain commas)
+    #  - dtype=str           : keep long barcodes exact (no float/scientific notation)
+    #  - keep_default_na=False : blank cells become "" instead of NaN, so .strip() is safe
+    read_kwargs = dict(sep="\t", dtype=str, keep_default_na=False, on_bad_lines="skip")
     try:
-        df = pd.read_csv(csv_path, encoding="utf-8", on_bad_lines="skip")
+        df = pd.read_csv(path, encoding="utf-8", **read_kwargs)
     except UnicodeDecodeError:
-        df = pd.read_csv(csv_path, encoding="latin-1", on_bad_lines="skip")
+        df = pd.read_csv(path, encoding="latin-1", **read_kwargs)
 
-    print(f"Columns in your CSV:\n{list(df.columns)}\n")
+    print(f"Columns in your file:\n{list(df.columns)}\n")
     print(f"Total rows: {len(df)}")
     print("Starting import...\n")
 
@@ -61,32 +96,35 @@ def import_items(csv_path):
 
     for _, row in df.iterrows():
         try:
-            category_id = get_or_create_category(str(row.get(COLUMN_MAP["category"], "")))
+            # This export has no 'Stock Code' column, so the Barcode (which also
+            # holds custom codes like CS1 / Paneer1) is our unique key.
+            barcode = str(row.get(COLUMN_MAP["barcode"], "")).strip()
+            if not barcode:
+                skipped += 1
+                print(f"  skipped row {inserted + skipped}: missing barcode")
+                continue
+
+            # Inactive: "0" = active, "1" = inactive. We keep the record but flag it.
+            is_active = clean_int(row.get(COLUMN_MAP["inactive"], 0)) == 0
+
+            category_id = get_or_create_category(
+                str(row.get(COLUMN_MAP["category"], ""))
+            )
 
             item = {
-                "sku":           str(row[COLUMN_MAP["sku"]]).strip(),
-                "barcode":       str(row.get(COLUMN_MAP["barcode"], "")).strip() or None,
-                "item_name":     str(row[COLUMN_MAP["item_name"]]).strip(),
-                "description":   str(row.get(COLUMN_MAP["description"], "")).strip() or None,
-                "retail_price":  clean_price(row[COLUMN_MAP["retail_price"]]),
+                "sku":           barcode,
+                "barcode":       barcode,
+                "item_name":     str(row.get(COLUMN_MAP["item_name"], "")).strip(),
+                "description":   build_description(row),
+                "retail_price":  clean_price(row.get(COLUMN_MAP["retail_price"], 0)),
                 "cost_price":    clean_price(row.get(COLUMN_MAP["cost_price"], 0)),
                 "unit":          str(row.get(COLUMN_MAP["unit"], "")).strip() or None,
                 "reorder_point": clean_int(row.get(COLUMN_MAP["reorder_point"], 0)),
                 "category_id":   category_id,
-                "is_active":     True,
+                "is_active":     is_active,
             }
 
-            result = supabase.table("items").upsert(item, on_conflict="sku").execute()
-            item_id = result.data[0]["item_id"]
-
-            
-            on_hand = clean_int(row.get(COLUMN_MAP["on_hand"], 0))
-            if on_hand != 0:
-                supabase.table("stock_movements").insert({
-                    "item_id":       item_id,
-                    "change_qty":    on_hand,
-                    "movement_type": "initial_count",
-                }).execute()
+            supabase.table("items").upsert(item, on_conflict="sku").execute()
 
             inserted += 1
             if inserted % 100 == 0:
@@ -100,4 +138,5 @@ def import_items(csv_path):
 
 
 if __name__ == "__main__":
-    import_items("stock_export.csv")
+    path = sys.argv[1] if len(sys.argv) > 1 else STOCK_FILE
+    import_items(path)
