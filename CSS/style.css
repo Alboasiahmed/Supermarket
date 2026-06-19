@@ -434,3 +434,44 @@ footer > p:last-child {
     footer { grid-template-columns: 1fr; }
     section { padding: 60px 20px; }
 }
+
+/*Store Expert chat widget*/
+
+#expert-tab {
+  position: fixed; bottom: 25px; right: 25px;
+  background: #7a2e1e; color: white; border: none; cursor: pointer;
+  padding: 14px 22px; border-radius: 50px; font-size: 16px; font-weight: bold;
+  box-shadow: 0 4px 16px rgba(122,46,30,0.4); z-index: 1000;
+  display: flex; align-items: center; gap: 8px; transition: transform 0.2s;
+}
+
+#expert-tab:hover { transform: scale(1.05); }
+
+#expert-panel {
+  position: fixed; top: 0; right: -400px; width: 400px; height: 100%;
+  background: #fdfaf6; box-shadow: -5px 0 20px rgba(0,0,0,0.2);
+  transition: right 0.3s; display: flex; flex-direction: column; z-index: 1000;
+}
+#expert-panel.open { right: 0; }
+
+#expert-header { background: #7a2e1e; color: white; padding: 20px; }
+
+#expert-messages {
+  flex: 1; overflow-y: auto; padding: 15px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.msg { padding: 10px 14px; border-radius: 12px; max-width: 80%; font-size: 14px; }
+
+.msg.bot { background: white; border: 1px solid #ddd; align-self: flex-start; }
+
+.msg.user { background: #7a2e1e; color: white; align-self: flex-end; }
+
+#expert-input { display: flex; padding: 15px; border-top: 1px solid #eee; gap: 8px; }
+
+#expert-input input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 10px; }
+
+#expert-input button {
+  padding: 10px 16px; background: #7a2e1e; color: white;
+  border: none; border-radius: 10px; cursor: pointer;
+}

@@ -264,6 +264,33 @@
         <p>© 2026 Swagat Supermarket. All rights reserved.</p>
         
     </footer>
+
+
+       
+    <button id="expert-tab" onclick="document.getElementById('expert-panel').classList.add('open')">
+      🧑‍🍳 Chat with us
+    </button>
+
+    <div id="expert-panel">
+      <div id="expert-header">
+        <button onclick="document.getElementById('expert-panel').classList.remove('open')"
+                style="float:right;background:none;border:none;color:white;font-size:20px;cursor:pointer">×</button>
+        <strong>Ask the Store Expert</strong><br>
+        <small>Recipes, spices &amp; stock — just ask</small>
+      </div>
+
+      <div id="expert-messages">
+        <div class="msg bot">Namaste! 🙏 Tell me what you're cooking and I'll help you find the ingredients.</div>
+      </div>
+
+      <div id="expert-input">
+        <input id="expert-text" placeholder="Ask me anything…"
+               onkeydown="if(event.key==='Enter') sendExpert(this.value)">
+        <button onclick="sendExpert(document.getElementById('expert-text').value)">Send</button>
+      </div>
+    </div>
+
+    <script src="JS/chatbot.js"></script>
     
 </body>
 </html>
