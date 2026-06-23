@@ -1,24 +1,34 @@
-const BACKEND_URL = 'http://localhost:8000/chat';  // change to your server when live
+const API_URL = "http://localhost:8000/chat";
+
+function addMessage(text, who) {
+  const messages = document.getElementById("expert-messages");
+  const div = document.createElement("div");
+  div.className = "msg " + who;
+  div.textContent = text;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+  return div;
+}
 
 async function sendExpert(text) {
-  if (!text.trim()) return;
-  const messages = document.getElementById('expert-messages');
-  document.getElementById('expert-text').value = '';
+  text = (text || "").trim();
+  if (!text) return;
 
-  // show the user's message
-  messages.innerHTML += '<div class="msg user">' + text + '</div>';
-  messages.scrollTop = messages.scrollHeight;
+  const input = document.getElementById("expert-text");
+  addMessage(text, "user");
+  input.value = "";
+
+  const typing = addMessage("…", "bot");   // placeholder while we wait
 
   try {
-    const res = await fetch(BACKEND_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text })
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
     });
     const data = await res.json();
-    messages.innerHTML += '<div class="msg bot">' + data.response + '</div>';
-  } catch {
-    messages.innerHTML += '<div class="msg bot">(Demo mode — connect your backend to get real answers)</div>';
+    typing.textContent = data.reply;
+  } catch (e) {
+    typing.textContent = "Sorry, I can't reach the store assistant right now.";
   }
-  messages.scrollTop = messages.scrollHeight;
 }
