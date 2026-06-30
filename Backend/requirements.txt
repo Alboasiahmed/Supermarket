@@ -6,4 +6,5 @@ langchain
 langchain-community
 fastapi
 uvicorn
- 
+openai
+slowapi

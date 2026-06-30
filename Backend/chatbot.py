@@ -1,10 +1,13 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from supabase import create_client
 from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 load_dotenv(override=True)   # make .env win over any stale OS environment variable
 
@@ -21,16 +24,29 @@ if USE_AI and os.getenv("OPENAI_API_KEY"):
 
 app = FastAPI()
 
+# Rate limiter: caps how many requests one IP can make (protects your OpenAI bill).
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Only allow your own website to call this API. For production set ALLOWED_ORIGINS in .env,
+# e.g. ALLOWED_ORIGINS=https://your-domain.com  (comma-separated for multiple sites).
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5500,http://127.0.0.1:5500",
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],    
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["POST"],
+    allow_headers=["Content-Type"],
 )
 
 
 class ChatRequest(BaseModel):
-    message: str
+    # Cap the length so nobody can send a huge prompt and run up token costs.
+    message: str = Field(min_length=1, max_length=500)
 
 
 def search_products(query, k=5):
@@ -67,7 +83,8 @@ def ai_reply(query, products):
 
 
 @app.post("/chat")
-def chat(req: ChatRequest):
+@limiter.limit("15/minute")   # max 15 requests per minute per visitor (IP)
+def chat(request: Request, req: ChatRequest):
     products = search_products(req.message)
 
     if openai_client and products:
