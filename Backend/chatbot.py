@@ -71,7 +71,8 @@ def ai_reply(query, products):
         model="gpt-5.4-nano",   
         messages=[
             {"role": "system", "content":
-             "You are a friendly assistant for Swagat India Groceries. "
+             "You are a friendly assistant for Swagat Groceries. "
+             "Always call the store 'Swagat Groceries' and never mention India or 'Indian'. "
              "Recommend ONLY items from the product list. Keep it short and warm. "
              "Reply in plain text only - do NOT use Markdown, asterisks, bold, or headings."},
             {"role": "user", "content":
