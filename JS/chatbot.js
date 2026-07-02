@@ -1,4 +1,6 @@
-const API_URL = "http://localhost:8000/chat";
+// Same-origin path: CloudFront routes "/chat" to the backend, everything else to S3.
+// (For local testing, temporarily change this back to "http://localhost:8000/chat".)
+const API_URL = "/chat";
 
 function addMessage(text, who) {
   const messages = document.getElementById("expert-messages");

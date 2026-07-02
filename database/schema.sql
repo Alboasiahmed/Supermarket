@@ -65,6 +65,50 @@ CREATE TABLE item_embeddings (
   embedding vector(384)
 );
 
--- run this after inserting embeddings, not before
-CREATE INDEX ON item_embeddings USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
+-- ---------------------------------------------------------------------------
+-- Vector index for fast similarity search.
+-- Build this AFTER inserting embeddings, not before.
+-- NOTE: the original design used ivfflat (Option A). During deployment an HNSW
+-- index (Option B) was created in the Supabase console. Confirm which one is
+-- actually live in the Supabase dashboard and keep only that one.
+-- ---------------------------------------------------------------------------
+
+-- Option A (original design): ivfflat
+-- CREATE INDEX ON item_embeddings USING ivfflat (embedding vector_cosine_ops)
+--   WITH (lists = 100);
+
+-- Option B (created during deployment): HNSW
+CREATE INDEX IF NOT EXISTS item_embeddings_embedding_idx
+  ON item_embeddings USING hnsw (embedding vector_cosine_ops);
+
+-- ---------------------------------------------------------------------------
+-- Similarity-search function used by the chatbot backend (Backend/chatbot.py).
+-- Returns the top-K closest ACTIVE products for a query embedding.
+-- Called from Python via: supabase.rpc("match_items", {...}).
+-- The <=> operator is pgvector cosine distance; similarity = 1 - distance.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION match_items(
+  query_embedding vector(384),
+  match_count     int DEFAULT 5
+)
+RETURNS TABLE (
+  item_id      int,
+  item_name    varchar,
+  description  text,
+  retail_price numeric,
+  similarity   float
+)
+LANGUAGE sql STABLE
+AS $$
+  SELECT
+    i.item_id,
+    i.item_name,
+    i.description,
+    i.retail_price,
+    1 - (e.embedding <=> query_embedding) AS similarity
+  FROM item_embeddings e
+  JOIN items i ON i.item_id = e.item_id
+  WHERE i.is_active = true
+  ORDER BY e.embedding <=> query_embedding
+  LIMIT match_count;
+$$;
